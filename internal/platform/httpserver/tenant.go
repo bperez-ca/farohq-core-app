@@ -1,0 +1,102 @@
+package httpserver
+
+import (
+	"net/http"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
+
+	"farohq-core-app/internal/platform/tenant"
+)
+
+// TenantResolution middleware that resolves tenant from request and sets RLS context
+func TenantResolution(tenantResolver *tenant.Resolver, db *pgxpool.Pool, logger zerolog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract host from request
+			host := r.Host
+			if host == "" {
+				host = r.Header.Get("Host")
+			}
+
+			// Resolve tenant
+			tenantID, err := tenantResolver.ResolveTenant(r.Context(), host)
+			if err != nil {
+				logger.Error().
+					Str("host", host).
+					Err(err).
+					Msg("Failed to resolve tenant")
+				http.Error(w, "Failed to resolve tenant", http.StatusInternalServerError)
+				return
+			}
+
+			// Resolve client (optional - from query param or header)
+			clientID := r.URL.Query().Get("client_id")
+			if clientID == "" {
+				clientID = r.Header.Get("X-Client-ID")
+			}
+
+			// Set tenant context in Go context
+			ctx := tenantResolver.SetTenantContext(r.Context(), tenantID)
+			if clientID != "" {
+				ctx = tenantResolver.SetClientContext(ctx, clientID)
+			}
+			r = r.WithContext(ctx)
+
+			// Set RLS context in database session
+			// Get a connection from the pool to set session variables
+			conn, err := db.Acquire(r.Context())
+			if err != nil {
+				logger.Error().Err(err).Msg("Failed to acquire database connection for RLS context")
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+			defer conn.Release()
+
+			// Set tenant_id for RLS
+			_, err = conn.Exec(r.Context(), "SELECT set_config('lv.tenant_id', $1, true)", tenantID)
+			if err != nil {
+				logger.Error().
+					Str("tenant_id", tenantID).
+					Err(err).
+					Msg("Failed to set tenant context in database")
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			// Set client_id for RLS (if provided)
+			if clientID != "" {
+				// Validate client belongs to tenant
+				var validClientID string
+				err := conn.QueryRow(r.Context(), `
+					SELECT id::text 
+					FROM clients 
+					WHERE id = $1 AND agency_id = $2 AND deleted_at IS NULL
+				`, clientID, tenantID).Scan(&validClientID)
+				if err != nil {
+					logger.Warn().
+						Str("client_id", clientID).
+						Str("tenant_id", tenantID).
+						Err(err).
+						Msg("Client not found or doesn't belong to tenant, skipping client context")
+					// Don't fail the request, just skip client context
+				} else {
+					_, err = conn.Exec(r.Context(), "SELECT set_config('lv.client_id', $1, true)", validClientID)
+					if err != nil {
+						logger.Error().
+							Str("client_id", validClientID).
+							Err(err).
+							Msg("Failed to set client context in database")
+						// Don't fail the request, RLS will work with just tenant_id
+					}
+				}
+			} else {
+				// Clear client_id if not provided
+				conn.Exec(r.Context(), "SELECT set_config('lv.client_id', '', true)")
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+

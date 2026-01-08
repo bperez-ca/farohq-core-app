@@ -1,0 +1,158 @@
+package composition
+
+import (
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
+
+	auth_http "farohq-core-app/internal/domains/auth/infra/http"
+	brand_usecases "farohq-core-app/internal/domains/brand/app/usecases"
+	brand_db "farohq-core-app/internal/domains/brand/infra/db"
+	brand_http "farohq-core-app/internal/domains/brand/infra/http"
+	files_usecases "farohq-core-app/internal/domains/files/app/usecases"
+	files_services "farohq-core-app/internal/domains/files/domain/services"
+	files_http "farohq-core-app/internal/domains/files/infra/http"
+	"farohq-core-app/internal/domains/files/infra/s3"
+	tenants_usecases "farohq-core-app/internal/domains/tenants/app/usecases"
+	tenants_services "farohq-core-app/internal/domains/tenants/domain/services"
+	tenants_db "farohq-core-app/internal/domains/tenants/infra/db"
+	tenants_http "farohq-core-app/internal/domains/tenants/infra/http"
+	"farohq-core-app/internal/platform/config"
+)
+
+// Composition wires all domains together
+type Composition struct {
+	TenantHandlers *tenants_http.Handlers
+	BrandHandlers  *brand_http.Handlers
+	FilesHandlers  *files_http.Handlers
+	AuthHandlers   *auth_http.Handlers
+}
+
+// RegisterPublicRoutes registers public routes (no auth required)
+func (c *Composition) RegisterPublicRoutes(r chi.Router) {
+	// Public brand routes
+	c.BrandHandlers.RegisterPublicRoutes(r)
+}
+
+// RegisterProtectedRoutes registers protected routes (auth required)
+func (c *Composition) RegisterProtectedRoutes(r chi.Router) {
+	// Register all domain routes
+	c.TenantHandlers.RegisterRoutes(r)
+	c.BrandHandlers.RegisterRoutes(r)
+	c.FilesHandlers.RegisterRoutes(r)
+	c.AuthHandlers.RegisterRoutes(r)
+}
+
+// NewComposition creates a new composition with all dependencies wired
+func NewComposition(
+	db *pgxpool.Pool,
+	cfg *config.Config,
+	logger zerolog.Logger,
+) *Composition {
+	// Initialize repositories
+	tenantRepo := tenants_db.NewTenantRepository(db)
+	tenantMemberRepo := tenants_db.NewTenantMemberRepository(db)
+	inviteRepo := tenants_db.NewInviteRepository(db)
+	clientRepo := tenants_db.NewClientRepository(db)
+	locationRepo := tenants_db.NewLocationRepository(db)
+	clientMemberRepo := tenants_db.NewClientMemberRepository(db)
+	brandRepo := brand_db.NewBrandRepository(db)
+
+	// Initialize services
+	seatValidator := tenants_services.NewSeatValidator()
+	assetValidator := files_services.NewAssetValidator()
+	keyGenerator := files_services.NewKeyGenerator()
+
+	// Initialize storage
+	storage, err := s3.NewStorage(cfg.AWSRegion, cfg.S3BucketName)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Failed to initialize S3 storage")
+	}
+
+	// Initialize tenant use cases
+	createTenant := tenants_usecases.NewCreateTenant(tenantRepo)
+	getTenant := tenants_usecases.NewGetTenant(tenantRepo)
+	updateTenant := tenants_usecases.NewUpdateTenant(tenantRepo)
+	inviteMember := tenants_usecases.NewInviteMember(inviteRepo, tenantMemberRepo, tenantRepo, seatValidator, 7*24*time.Hour)
+	acceptInvite := tenants_usecases.NewAcceptInvite(inviteRepo, tenantMemberRepo)
+	listMembers := tenants_usecases.NewListMembers(tenantMemberRepo, tenantRepo)
+	removeMember := tenants_usecases.NewRemoveMember(tenantMemberRepo, tenantRepo)
+	listRoles := tenants_usecases.NewListRoles(tenantRepo)
+	createClient := tenants_usecases.NewCreateClient(clientRepo, tenantRepo, seatValidator)
+	listClients := tenants_usecases.NewListClients(clientRepo, tenantRepo)
+	getClient := tenants_usecases.NewGetClient(clientRepo)
+	updateClient := tenants_usecases.NewUpdateClient(clientRepo)
+	addClientMember := tenants_usecases.NewAddClientMember(clientMemberRepo, locationRepo, seatValidator)
+	listClientMembers := tenants_usecases.NewListClientMembers(clientMemberRepo)
+	removeClientMember := tenants_usecases.NewRemoveClientMember(clientMemberRepo)
+	createLocation := tenants_usecases.NewCreateLocation(locationRepo, clientRepo)
+	listLocations := tenants_usecases.NewListLocations(locationRepo)
+	updateLocation := tenants_usecases.NewUpdateLocation(locationRepo)
+	getSeatUsage := tenants_usecases.NewGetSeatUsage(tenantRepo, clientRepo, clientMemberRepo, locationRepo)
+
+	// Initialize brand use cases
+	getByDomain := brand_usecases.NewGetByDomain(brandRepo)
+	getByHost := brand_usecases.NewGetByHost(brandRepo, tenantRepo)
+	listBrands := brand_usecases.NewListBrands(brandRepo)
+	createBrand := brand_usecases.NewCreateBrand(brandRepo)
+	getBrand := brand_usecases.NewGetBrand(brandRepo)
+	updateBrand := brand_usecases.NewUpdateBrand(brandRepo)
+	deleteBrand := brand_usecases.NewDeleteBrand(brandRepo)
+
+	// Initialize files use cases
+	signUpload := files_usecases.NewSignUpload(storage, assetValidator, keyGenerator, cfg.S3BucketName, 10*time.Minute)
+	deleteFile := files_usecases.NewDeleteFile(storage, keyGenerator, cfg.S3BucketName)
+
+	// Initialize handlers
+	tenantHandlers := tenants_http.NewHandlers(
+		logger,
+		createTenant,
+		getTenant,
+		updateTenant,
+		inviteMember,
+		acceptInvite,
+		listMembers,
+		removeMember,
+		listRoles,
+		createClient,
+		listClients,
+		getClient,
+		updateClient,
+		addClientMember,
+		listClientMembers,
+		removeClientMember,
+		createLocation,
+		listLocations,
+		updateLocation,
+		getSeatUsage,
+	)
+
+	brandHandlers := brand_http.NewHandlers(
+		logger,
+		getByDomain,
+		getByHost,
+		listBrands,
+		createBrand,
+		getBrand,
+		updateBrand,
+		deleteBrand,
+	)
+
+	filesHandlers := files_http.NewHandlers(
+		logger,
+		signUpload,
+		deleteFile,
+	)
+
+	authHandlers := auth_http.NewHandlers(logger)
+
+	return &Composition{
+		TenantHandlers: tenantHandlers,
+		BrandHandlers:  brandHandlers,
+		FilesHandlers:  filesHandlers,
+		AuthHandlers:   authHandlers,
+	}
+}
+
