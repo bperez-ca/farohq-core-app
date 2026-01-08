@@ -49,17 +49,16 @@ func (c *Composition) RegisterProtectedRoutes(r chi.Router) {
 // This excludes routes that don't need tenant context (e.g., POST /tenants, GET /auth/me)
 func (c *Composition) RegisterProtectedRoutesWithTenant(r chi.Router) {
 	// Register tenant routes (excluding POST /tenants which doesn't need tenant context)
-	r.Route("/tenants", func(r chi.Router) {
-		r.Get("/{id}", c.TenantHandlers.GetTenantHandler)
-		r.Put("/{id}", c.TenantHandlers.UpdateTenantHandler)
-		r.Post("/{id}/invites", c.TenantHandlers.InviteMemberHandler)
-		r.Get("/{id}/members", c.TenantHandlers.ListMembersHandler)
-		r.Delete("/{id}/members/{user_id}", c.TenantHandlers.RemoveMemberHandler)
-		r.Get("/{id}/roles", c.TenantHandlers.ListRolesHandler)
-		r.Get("/{id}/seat-usage", c.TenantHandlers.GetSeatUsageHandler)
-		r.Post("/{id}/clients", c.TenantHandlers.CreateClientHandler)
-		r.Get("/{id}/clients", c.TenantHandlers.ListClientsHandler)
-	})
+	// Note: We register these directly since POST /tenants is already registered in main.go
+	r.Get("/tenants/{id}", c.TenantHandlers.GetTenantHandler)
+	r.Put("/tenants/{id}", c.TenantHandlers.UpdateTenantHandler)
+	r.Post("/tenants/{id}/invites", c.TenantHandlers.InviteMemberHandler)
+	r.Get("/tenants/{id}/members", c.TenantHandlers.ListMembersHandler)
+	r.Delete("/tenants/{id}/members/{user_id}", c.TenantHandlers.RemoveMemberHandler)
+	r.Get("/tenants/{id}/roles", c.TenantHandlers.ListRolesHandler)
+	r.Get("/tenants/{id}/seat-usage", c.TenantHandlers.GetSeatUsageHandler)
+	r.Post("/tenants/{id}/clients", c.TenantHandlers.CreateClientHandler)
+	r.Get("/tenants/{id}/clients", c.TenantHandlers.ListClientsHandler)
 
 	// Register client routes (all require tenant context)
 	r.Route("/clients", func(r chi.Router) {

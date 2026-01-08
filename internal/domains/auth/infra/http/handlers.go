@@ -24,16 +24,24 @@ func (h *Handlers) MeHandler(w http.ResponseWriter, r *http.Request) {
 	// Get user info from context (set by RequireAuth middleware)
 	userID := r.Context().Value("user_id")
 	email := r.Context().Value("email")
+	firstName := r.Context().Value("first_name")
+	lastName := r.Context().Value("last_name")
+	name := r.Context().Value("name")
+	createdAt := r.Context().Value("created_at")
 	orgID := r.Context().Value("org_id")
 	orgSlug := r.Context().Value("org_slug")
 	orgRole := r.Context().Value("org_role")
 
 	response := map[string]interface{}{
-		"user_id":  userID,
-		"email":    email,
-		"org_id":   orgID,
-		"org_slug": orgSlug,
-		"org_role": orgRole,
+		"user_id":    userID,
+		"email":      email,
+		"first_name": firstName,
+		"last_name":  lastName,
+		"name":       name,
+		"created_at": createdAt,
+		"org_id":     orgID,
+		"org_slug":   orgSlug,
+		"org_role":   orgRole,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
