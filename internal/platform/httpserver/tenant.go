@@ -13,21 +13,36 @@ import (
 func TenantResolution(tenantResolver *tenant.Resolver, db *pgxpool.Pool, logger zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip tenant resolution for health endpoints
+			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || r.URL.Path == "/" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Extract host from request
 			host := r.Host
 			if host == "" {
 				host = r.Header.Get("Host")
 			}
 
-			// Resolve tenant
+			// Try to resolve tenant from domain
 			tenantID, err := tenantResolver.ResolveTenant(r.Context(), host)
 			if err != nil {
-				logger.Error().
-					Str("host", host).
-					Err(err).
-					Msg("Failed to resolve tenant")
-				http.Error(w, "Failed to resolve tenant", http.StatusInternalServerError)
-				return
+				// Try fallback to X-Tenant-ID header
+				tenantIDHeader := r.Header.Get("X-Tenant-ID")
+				if tenantIDHeader != "" {
+					tenantID = tenantIDHeader
+					err = nil
+				} else {
+					logger.Debug().
+						Str("host", host).
+						Err(err).
+						Msg("Failed to resolve tenant by domain")
+					// For public routes, allow proceeding without tenant context
+					// The route handler will handle authorization
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 
 			// Resolve client (optional - from query param or header)
@@ -100,3 +115,21 @@ func TenantResolution(tenantResolver *tenant.Resolver, db *pgxpool.Pool, logger 
 	}
 }
 
+
+// RequireTenantContext middleware ensures tenant context exists
+// This should be applied to protected routes that require tenant context
+func RequireTenantContext(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tenantID, ok := tenant.GetTenantFromContext(r.Context())
+		if !ok {
+			http.Error(w, "Failed to resolve tenant. Provide X-Tenant-ID header or use a tenant domain.", http.StatusBadRequest)
+			return
+		}
+		// Ensure tenantID is not empty
+		if tenantID == "" {
+			http.Error(w, "Failed to resolve tenant. Provide X-Tenant-ID header or use a tenant domain.", http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

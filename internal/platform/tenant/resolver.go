@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -118,3 +119,11 @@ func GetClientUUIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	return id, true
 }
 
+// RequireTenant ensures tenant context exists, returns error if not found
+func RequireTenant(ctx context.Context) (string, error) {
+	tenantID, ok := GetTenantFromContext(ctx)
+	if !ok {
+		return "", fmt.Errorf("tenant context required")
+	}
+	return tenantID, nil
+}

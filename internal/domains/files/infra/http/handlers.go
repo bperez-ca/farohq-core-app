@@ -31,6 +31,15 @@ func NewHandlers(
 	}
 }
 
+// ListFilesHandler handles GET /api/v1/files
+// Returns an empty list as file listing is not yet implemented
+func (h *Handlers) ListFilesHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO: Implement file listing use case
+	// For now, return empty list to satisfy API contract
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode([]interface{}{})
+}
+
 // SignHandler handles POST /api/v1/files/sign
 func (h *Handlers) SignHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -91,4 +100,3 @@ func (h *Handlers) DeleteFileHandler(w http.ResponseWriter, r *http.Request) {
 		"success": resp.Success,
 	})
 }
-

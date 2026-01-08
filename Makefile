@@ -90,3 +90,18 @@ install-migrate:
 	@echo "Installing golang-migrate..."
 	$(GO) install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
+# E2E Testing
+e2e-start:
+	@echo "Starting E2E environment..."
+	@./scripts/start-e2e.sh
+
+e2e-stop:
+	@echo "Stopping E2E environment..."
+	@./scripts/stop-e2e.sh
+
+e2e-test:
+	@echo "Running E2E tests..."
+	@./scripts/run-e2e-tests.sh
+
+e2e-full: e2e-start
+	@echo "E2E environment ready. Run 'make e2e-test' to run tests, 'make e2e-stop' to stop."

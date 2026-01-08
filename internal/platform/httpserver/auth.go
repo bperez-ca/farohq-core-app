@@ -27,10 +27,16 @@ func NewRequireAuth(jwksURL string, logger zerolog.Logger) (*RequireAuth, error)
 
 	cache := jwk.NewCache(context.Background())
 
-	// Set up automatic refresh of JWKS
+	// Register the JWKS URL with the cache
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Register the URL first
+	if err := cache.Register(jwksURL); err != nil {
+		return nil, fmt.Errorf("failed to register JWKS URL: %w", err)
+	}
+
+	// Then fetch initial JWKS
 	_, err := cache.Refresh(ctx, jwksURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch initial JWKS: %w", err)
@@ -127,4 +133,3 @@ func (ra *RequireAuth) RequireAuth(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-

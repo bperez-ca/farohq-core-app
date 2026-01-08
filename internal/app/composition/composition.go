@@ -45,6 +45,45 @@ func (c *Composition) RegisterProtectedRoutes(r chi.Router) {
 	c.AuthHandlers.RegisterRoutes(r)
 }
 
+// RegisterProtectedRoutesWithTenant registers protected routes that require tenant context
+// This excludes routes that don't need tenant context (e.g., POST /tenants, GET /auth/me)
+func (c *Composition) RegisterProtectedRoutesWithTenant(r chi.Router) {
+	// Register tenant routes (excluding POST /tenants which doesn't need tenant context)
+	r.Route("/tenants", func(r chi.Router) {
+		r.Get("/{id}", c.TenantHandlers.GetTenantHandler)
+		r.Put("/{id}", c.TenantHandlers.UpdateTenantHandler)
+		r.Post("/{id}/invites", c.TenantHandlers.InviteMemberHandler)
+		r.Get("/{id}/members", c.TenantHandlers.ListMembersHandler)
+		r.Delete("/{id}/members/{user_id}", c.TenantHandlers.RemoveMemberHandler)
+		r.Get("/{id}/roles", c.TenantHandlers.ListRolesHandler)
+		r.Get("/{id}/seat-usage", c.TenantHandlers.GetSeatUsageHandler)
+		r.Post("/{id}/clients", c.TenantHandlers.CreateClientHandler)
+		r.Get("/{id}/clients", c.TenantHandlers.ListClientsHandler)
+	})
+
+	// Register client routes (all require tenant context)
+	r.Route("/clients", func(r chi.Router) {
+		r.Get("/{id}", c.TenantHandlers.GetClientHandler)
+		r.Put("/{id}", c.TenantHandlers.UpdateClientHandler)
+		r.Post("/{id}/members", c.TenantHandlers.AddClientMemberHandler)
+		r.Get("/{id}/members", c.TenantHandlers.ListClientMembersHandler)
+		r.Delete("/{id}/members/{memberId}", c.TenantHandlers.RemoveClientMemberHandler)
+		r.Post("/{id}/locations", c.TenantHandlers.CreateLocationHandler)
+		r.Get("/{id}/locations", c.TenantHandlers.ListLocationsHandler)
+	})
+
+	// Register location routes (all require tenant context)
+	r.Route("/locations", func(r chi.Router) {
+		r.Put("/{id}", c.TenantHandlers.UpdateLocationHandler)
+	})
+
+	// Register brand routes (all require tenant context)
+	c.BrandHandlers.RegisterRoutes(r)
+
+	// Register files routes (all require tenant context)
+	c.FilesHandlers.RegisterRoutes(r)
+}
+
 // NewComposition creates a new composition with all dependencies wired
 func NewComposition(
 	db *pgxpool.Pool,

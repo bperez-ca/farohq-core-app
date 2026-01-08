@@ -126,7 +126,7 @@ func (h *Handlers) ListBrandsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get tenant ID from context
 	tenantID, ok := tenant.GetTenantFromContext(r.Context())
 	if !ok {
-		http.Error(w, "tenant context required", http.StatusBadRequest)
+		http.Error(w, "Failed to resolve tenant. Provide X-Tenant-ID header or use a tenant domain.", http.StatusBadRequest)
 		return
 	}
 
@@ -170,7 +170,7 @@ func (h *Handlers) CreateBrandHandler(w http.ResponseWriter, r *http.Request) {
 	// Get tenant ID from context
 	tenantID, ok := tenant.GetTenantFromContext(r.Context())
 	if !ok {
-		http.Error(w, "tenant context required", http.StatusBadRequest)
+		http.Error(w, "Failed to resolve tenant. Provide X-Tenant-ID header or use a tenant domain.", http.StatusBadRequest)
 		return
 	}
 

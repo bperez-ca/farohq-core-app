@@ -89,7 +89,20 @@ func main() {
 		// Protected routes (auth required)
 		r.Group(func(r chi.Router) {
 			r.Use(authMiddleware.RequireAuth)
-			appComposition.RegisterProtectedRoutes(r)
+
+			// Routes that don't require tenant context
+			r.Route("/tenants", func(r chi.Router) {
+				r.Post("/", appComposition.TenantHandlers.CreateTenantHandler)
+			})
+			r.Route("/auth", func(r chi.Router) {
+				r.Get("/me", appComposition.AuthHandlers.MeHandler)
+			})
+
+			// All other protected routes require tenant context
+			r.Group(func(r chi.Router) {
+				r.Use(httpserver.RequireTenantContext)
+				appComposition.RegisterProtectedRoutesWithTenant(r)
+			})
 		})
 	})
 
