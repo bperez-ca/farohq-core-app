@@ -19,6 +19,9 @@ import (
 	tenants_services "farohq-core-app/internal/domains/tenants/domain/services"
 	tenants_db "farohq-core-app/internal/domains/tenants/infra/db"
 	tenants_http "farohq-core-app/internal/domains/tenants/infra/http"
+	users_usecases "farohq-core-app/internal/domains/users/app/usecases"
+	users_db "farohq-core-app/internal/domains/users/infra/db"
+	users_http "farohq-core-app/internal/domains/users/infra/http"
 	"farohq-core-app/internal/platform/config"
 )
 
@@ -28,6 +31,7 @@ type Composition struct {
 	BrandHandlers  *brand_http.Handlers
 	FilesHandlers  *files_http.Handlers
 	AuthHandlers   *auth_http.Handlers
+	UserHandlers   *users_http.Handlers
 }
 
 // RegisterPublicRoutes registers public routes (no auth required)
@@ -43,6 +47,7 @@ func (c *Composition) RegisterProtectedRoutes(r chi.Router) {
 	c.BrandHandlers.RegisterRoutes(r)
 	c.FilesHandlers.RegisterRoutes(r)
 	c.AuthHandlers.RegisterRoutes(r)
+	c.UserHandlers.RegisterRoutes(r)
 }
 
 // RegisterProtectedRoutesWithTenant registers protected routes that require tenant context
@@ -89,7 +94,7 @@ func NewComposition(
 	cfg *config.Config,
 	logger zerolog.Logger,
 ) *Composition {
-	// Initialize repositories
+		// Initialize repositories
 	tenantRepo := tenants_db.NewTenantRepository(db)
 	tenantMemberRepo := tenants_db.NewTenantMemberRepository(db)
 	inviteRepo := tenants_db.NewInviteRepository(db)
@@ -97,6 +102,7 @@ func NewComposition(
 	locationRepo := tenants_db.NewLocationRepository(db)
 	clientMemberRepo := tenants_db.NewClientMemberRepository(db)
 	brandRepo := brand_db.NewBrandRepository(db)
+	userRepo := users_db.NewUserRepository(db)
 
 	// Initialize services
 	seatValidator := tenants_services.NewSeatValidator()
@@ -143,6 +149,9 @@ func NewComposition(
 	signUpload := files_usecases.NewSignUpload(storage, assetValidator, keyGenerator, cfg.S3BucketName, 10*time.Minute)
 	deleteFile := files_usecases.NewDeleteFile(storage, keyGenerator, cfg.S3BucketName)
 
+	// Initialize user use cases
+	syncUser := users_usecases.NewSyncUser(userRepo)
+
 	// Initialize handlers
 	tenantHandlers := tenants_http.NewHandlers(
 		logger,
@@ -186,11 +195,17 @@ func NewComposition(
 
 	authHandlers := auth_http.NewHandlers(logger)
 
+	userHandlers := users_http.NewHandlers(
+		logger,
+		syncUser,
+	)
+
 	return &Composition{
 		TenantHandlers: tenantHandlers,
 		BrandHandlers:  brandHandlers,
 		FilesHandlers:  filesHandlers,
 		AuthHandlers:   authHandlers,
+		UserHandlers:   userHandlers,
 	}
 }
 

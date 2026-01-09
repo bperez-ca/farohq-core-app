@@ -1,14 +1,38 @@
-.PHONY: dev test lint migrate-up migrate-down migrate-status migrate-create build docker-build docker-run clean e2e-start e2e-stop e2e-test e2e-full
+.PHONY: dev test lint migrate-up migrate-down migrate-status migrate-create build docker-build docker-run clean e2e-start e2e-stop e2e-test e2e-full up down db-wait
 
 # Variables
 GO := go
 MIGRATE := migrate
 DATABASE_URL ?= postgres://postgres:password@localhost:5432/localvisibilityos?sslmode=disable
+COMPOSE := docker-compose
 
 # Development
-dev:
+dev: up db-wait migrate-up
 	@echo "Starting development server..."
 	$(GO) run cmd/server/main.go
+
+# Infrastructure
+up:
+	@echo "Starting PostgreSQL..."
+	@$(COMPOSE) up -d postgres
+
+down:
+	@echo "Stopping PostgreSQL..."
+	@$(COMPOSE) down
+
+db-wait:
+	@echo "Waiting for PostgreSQL to be ready..."
+	@timeout=30; \
+	counter=0; \
+	until docker exec farohq-core-app-postgres pg_isready -U postgres > /dev/null 2>&1; do \
+		sleep 1; \
+		counter=$$((counter + 1)); \
+		if [ $$counter -ge $$timeout ]; then \
+			echo "❌ PostgreSQL failed to start within $$timeout seconds"; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "✅ PostgreSQL is ready"
 
 # Testing
 test:

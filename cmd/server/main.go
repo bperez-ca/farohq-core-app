@@ -97,6 +97,9 @@ func main() {
 			r.Route("/auth", func(r chi.Router) {
 				r.Get("/me", appComposition.AuthHandlers.MeHandler)
 			})
+			r.Route("/users", func(r chi.Router) {
+				r.Post("/sync", appComposition.UserHandlers.SyncUserHandler)
+			})
 
 			// All other protected routes require tenant context
 			r.Group(func(r chi.Router) {
