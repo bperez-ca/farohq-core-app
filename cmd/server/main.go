@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -93,7 +94,17 @@ func main() {
 			// Routes that don't require tenant context
 			r.Route("/tenants", func(r chi.Router) {
 				r.Post("/", appComposition.TenantHandlers.CreateTenantHandler)
+				r.Post("/onboard", appComposition.TenantHandlers.OnboardTenantHandler)
 			})
+			// Register /tenants/my-orgs at top level (outside Route) to ensure it matches before Group middleware
+			// #region agent log
+			r.Get("/tenants/my-orgs", func(w http.ResponseWriter, r *http.Request) {
+				logFile, _ := os.OpenFile("/Users/bperez/Projects/farohq-core-app/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				json.NewEncoder(logFile).Encode(map[string]interface{}{"timestamp": time.Now().UnixMilli(), "location": "main.go:100", "message": "my-orgs route matched - BEFORE RequireTenantContext", "hypothesisId": "H1,H2,H5", "sessionId": "debug-session", "runId": "run3", "data": map[string]interface{}{"path": r.URL.Path, "method": r.Method}})
+				logFile.Close()
+				appComposition.TenantHandlers.ListTenantsByUserHandler(w, r)
+			})
+			// #endregion
 			r.Route("/auth", func(r chi.Router) {
 				r.Get("/me", appComposition.AuthHandlers.MeHandler)
 			})
@@ -102,10 +113,24 @@ func main() {
 			})
 
 			// All other protected routes require tenant context
+			// #region agent log
 			r.Group(func(r chi.Router) {
-				r.Use(httpserver.RequireTenantContext)
+				// #region agent log
+				mw := httpserver.RequireTenantContext
+				wrappedMw := func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						logFile, _ := os.OpenFile("/Users/bperez/Projects/farohq-core-app/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+						json.NewEncoder(logFile).Encode(map[string]interface{}{"timestamp": time.Now().UnixMilli(), "location": "main.go:116", "message": "Group middleware wrapper: about to apply RequireTenantContext", "hypothesisId": "H4", "sessionId": "debug-session", "runId": "run2", "data": map[string]interface{}{"path": r.URL.Path, "method": r.Method}})
+						logFile.Close()
+						// #endregion
+						mw(next).ServeHTTP(w, r)
+					})
+				}
+				r.Use(wrappedMw)
+				// #endregion
 				appComposition.RegisterProtectedRoutesWithTenant(r)
 			})
+			// #endregion
 		})
 	})
 

@@ -14,7 +14,8 @@ type CreateBrand interface {
 // CreateBrandRequest represents the request
 type CreateBrandRequest struct {
 	AgencyID       string
-	Domain         string
+	Domain         string                 // Optional: Custom domain (Scale tier only)
+	Website        string                 // Optional: Agency website URL (captured during onboarding)
 	LogoURL        string
 	FaviconURL     string
 	PrimaryColor   string

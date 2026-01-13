@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"farohq-core-app/internal/domains/brand/domain"
+	"farohq-core-app/internal/domains/brand/domain/model"
 	"farohq-core-app/internal/domains/brand/domain/ports/inbound"
 	"farohq-core-app/internal/domains/brand/domain/ports/outbound"
 	tenants_outbound "farohq-core-app/internal/domains/tenants/domain/ports/outbound"
@@ -26,29 +27,30 @@ func NewGetByHost(brandRepo outbound.BrandRepository, tenantRepo tenants_outboun
 
 // Execute executes the use case
 func (uc *GetByHost) Execute(ctx context.Context, req *inbound.GetByHostRequest) (*inbound.GetByHostResponse, error) {
-	// Extract slug from host (remove port and extract subdomain)
+	// Extract host domain (remove port if present)
 	hostParts := strings.Split(req.Host, ":")
 	hostDomain := hostParts[0]
+	hostDomain = strings.ToLower(hostDomain)
 
-	// Extract subdomain (slug)
-	domainParts := strings.Split(hostDomain, ".")
-	var slug string
-	if len(domainParts) > 2 {
-		slug = domainParts[0]
+	var branding *model.Branding
+	var err error
+
+	// Determine if host is subdomain or custom domain
+	if strings.HasSuffix(hostDomain, ".portal.farohq.com") {
+		// Subdomain resolution: {slug}.portal.farohq.com
+		// Extract full subdomain (including .portal.farohq.com)
+		subdomain := hostDomain
+		branding, err = uc.brandRepo.FindBySubdomain(ctx, subdomain)
+		if err != nil {
+			return nil, domain.ErrBrandingNotFound
+		}
 	} else {
-		// Default to main domain
-		slug = "main"
-	}
-
-	// Query database for agency by slug, then get branding
-	tenant, err := uc.tenantRepo.FindBySlug(ctx, slug)
-	if err != nil {
-		return nil, domain.ErrBrandingNotFound
-	}
-
-	branding, err := uc.brandRepo.FindByAgencyID(ctx, tenant.ID())
-	if err != nil {
-		return nil, domain.ErrBrandingNotFound
+		// Custom domain resolution: portal.agency.com
+		// Query by domain field
+		branding, err = uc.brandRepo.FindByDomain(ctx, hostDomain)
+		if err != nil {
+			return nil, domain.ErrBrandingNotFound
+		}
 	}
 
 	return &inbound.GetByHostResponse{

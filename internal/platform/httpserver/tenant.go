@@ -1,7 +1,10 @@
 package httpserver
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -120,8 +123,18 @@ func TenantResolution(tenantResolver *tenant.Resolver, db *pgxpool.Pool, logger 
 // This should be applied to protected routes that require tenant context
 func RequireTenantContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// #region agent log
+		logFile, _ := os.OpenFile("/Users/bperez/Projects/farohq-core-app/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		json.NewEncoder(logFile).Encode(map[string]interface{}{"timestamp": time.Now().UnixMilli(), "location": "tenant.go:122", "message": "RequireTenantContext middleware executed", "hypothesisId": "H2", "sessionId": "debug-session", "runId": "run1", "data": map[string]interface{}{"path": r.URL.Path, "method": r.Method}})
+		logFile.Close()
+		// #endregion
 		tenantID, ok := tenant.GetTenantFromContext(r.Context())
 		if !ok {
+			// #region agent log
+			logFile2, _ := os.OpenFile("/Users/bperez/Projects/farohq-core-app/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			json.NewEncoder(logFile2).Encode(map[string]interface{}{"timestamp": time.Now().UnixMilli(), "location": "tenant.go:125", "message": "RequireTenantContext: tenant context missing, rejecting", "hypothesisId": "H2", "sessionId": "debug-session", "runId": "run1", "data": map[string]interface{}{"path": r.URL.Path, "method": r.Method}})
+			logFile2.Close()
+			// #endregion
 			http.Error(w, "Failed to resolve tenant. Provide X-Tenant-ID header or use a tenant domain.", http.StatusBadRequest)
 			return
 		}

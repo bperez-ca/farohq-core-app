@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +13,7 @@ import (
 	"farohq-core-app/internal/domains/tenants/domain"
 	"farohq-core-app/internal/domains/tenants/domain/model"
 	"farohq-core-app/internal/domains/tenants/app/usecases"
+	users_outbound "farohq-core-app/internal/domains/users/domain/ports/outbound"
 )
 
 // Handlers provides HTTP handlers for the tenants domain
@@ -36,12 +38,17 @@ type Handlers struct {
 	listLocations     *usecases.ListLocations
 	updateLocation    *usecases.UpdateLocation
 	getSeatUsage      *usecases.GetSeatUsage
+	listTenantsByUser *usecases.ListTenantsByUser
+	validateSlug      *usecases.ValidateSlug
+	onboardTenant     *usecases.OnboardTenant
+	userRepo          users_outbound.UserRepository
 }
 
 // NewHandlers creates new tenants HTTP handlers
 func NewHandlers(
 	logger zerolog.Logger,
 	createTenant *usecases.CreateTenant,
+	onboardTenant *usecases.OnboardTenant,
 	getTenant *usecases.GetTenant,
 	updateTenant *usecases.UpdateTenant,
 	inviteMember *usecases.InviteMember,
@@ -60,10 +67,14 @@ func NewHandlers(
 	listLocations *usecases.ListLocations,
 	updateLocation *usecases.UpdateLocation,
 	getSeatUsage *usecases.GetSeatUsage,
+	listTenantsByUser *usecases.ListTenantsByUser,
+	validateSlug *usecases.ValidateSlug,
+	userRepo users_outbound.UserRepository,
 ) *Handlers {
-	return &Handlers{
+		return &Handlers{
 		logger:            logger,
 		createTenant:      createTenant,
+		onboardTenant:     onboardTenant,
 		getTenant:         getTenant,
 		updateTenant:      updateTenant,
 		inviteMember:      inviteMember,
@@ -82,6 +93,9 @@ func NewHandlers(
 		listLocations:     listLocations,
 		updateLocation:    updateLocation,
 		getSeatUsage:      getSeatUsage,
+		listTenantsByUser: listTenantsByUser,
+		validateSlug:      validateSlug,
+		userRepo:          userRepo,
 	}
 }
 
@@ -1033,6 +1047,150 @@ func (h *Handlers) GetSeatUsageHandler(w http.ResponseWriter, r *http.Request) {
 		"total_clients":      resp.Usage.TotalClients,
 		"total_locations":    resp.Usage.TotalLocations,
 		"client_breakdown":   clientBreakdown,
+	})
+}
+
+// OnboardTenantHandler handles POST /api/v1/tenants/onboard
+func (h *Handlers) OnboardTenantHandler(w http.ResponseWriter, r *http.Request) {
+	// Get Clerk user ID from context (set by auth middleware)
+	clerkUserID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		http.Error(w, "user ID required", http.StatusUnauthorized)
+		return
+	}
+
+	// Look up user by Clerk user ID to get database UUID
+	user, err := h.userRepo.FindByClerkUserID(r.Context(), clerkUserID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("clerk_user_id", clerkUserID).Msg("Failed to find user by Clerk user ID")
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+	userID := user.ID()
+
+	var req struct {
+		Name            string `json:"name"`
+		Slug            string `json:"slug"`
+		Website         string `json:"website"`
+		PrimaryColor    string `json:"primary_color"`
+		LogoURL         string `json:"logo_url"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Default to Starter tier for new tenants
+	tier := model.TierStarter
+	onboardReq := &usecases.OnboardTenantRequest{
+		Name:            req.Name,
+		Slug:            req.Slug,
+		Tier:            &tier,
+		AgencySeatLimit: 0, // Default seat limit
+		UserID:          userID,
+	}
+
+	resp, err := h.onboardTenant.Execute(r.Context(), onboardReq)
+	if err != nil {
+		if err == domain.ErrTenantAlreadyExists {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		if err == domain.ErrInvalidTenantName || err == domain.ErrInvalidTenantSlug {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		h.logger.Error().Err(err).Msg("Failed to onboard tenant")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":         resp.Tenant.ID().String(),
+		"name":       resp.Tenant.Name(),
+		"slug":       resp.Tenant.Slug(),
+		"status":     string(resp.Tenant.Status()),
+		"created_at": resp.Tenant.CreatedAt().Format(time.RFC3339),
+	})
+}
+
+// ListTenantsByUserHandler handles GET /api/v1/tenants/my-orgs
+func (h *Handlers) ListTenantsByUserHandler(w http.ResponseWriter, r *http.Request) {
+	// #region agent log
+	logFile, _ := os.OpenFile("/Users/bperez/Projects/farohq-core-app/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	json.NewEncoder(logFile).Encode(map[string]interface{}{"timestamp": time.Now().UnixMilli(), "location": "handlers.go:1112", "message": "ListTenantsByUserHandler called", "hypothesisId": "H3", "sessionId": "debug-session", "runId": "run1", "data": map[string]interface{}{"path": r.URL.Path, "method": r.Method}})
+	logFile.Close()
+	// #endregion
+	// Get Clerk user ID from context (set by auth middleware)
+	clerkUserID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		http.Error(w, "user ID required", http.StatusUnauthorized)
+		return
+	}
+
+	// Look up user by Clerk user ID to get database UUID
+	user, err := h.userRepo.FindByClerkUserID(r.Context(), clerkUserID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("clerk_user_id", clerkUserID).Msg("Failed to find user by Clerk user ID")
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	listReq := &usecases.ListTenantsByUserRequest{
+		UserID: user.ID(),
+	}
+
+	resp, err := h.listTenantsByUser.Execute(r.Context(), listReq)
+	if err != nil {
+		h.logger.Error().Err(err).Msg("Failed to list tenants by user")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	tenants := make([]map[string]interface{}, len(resp.Tenants))
+	for i, tenantWithRole := range resp.Tenants {
+		tenants[i] = map[string]interface{}{
+			"id":         tenantWithRole.Tenant.ID().String(),
+			"name":       tenantWithRole.Tenant.Name(),
+			"slug":       tenantWithRole.Tenant.Slug(),
+			"role":       string(tenantWithRole.Role),
+			"created_at": tenantWithRole.Tenant.CreatedAt().Format(time.RFC3339),
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"count":  len(tenants),
+		"orgs":   tenants,
+	})
+}
+
+// ValidateSlugHandler handles GET /api/v1/tenants/validate-slug?slug=xxx
+func (h *Handlers) ValidateSlugHandler(w http.ResponseWriter, r *http.Request) {
+	slug := r.URL.Query().Get("slug")
+	if slug == "" {
+		http.Error(w, "slug parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	validateReq := &usecases.ValidateSlugRequest{
+		Slug: slug,
+	}
+
+	resp, err := h.validateSlug.Execute(r.Context(), validateReq)
+	if err != nil {
+		h.logger.Error().Err(err).Msg("Failed to validate slug")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"available": resp.Available,
+		"slug":      resp.Slug,
 	})
 }
 

@@ -29,6 +29,18 @@ type Config struct {
 	AWSSecretAccessKey string
 	S3BucketName       string
 
+	// GCP Cloud Storage
+	GCSBucketName string
+	GCSProjectID  string
+
+	// Vercel API (for custom domain management)
+	VercelAPIToken  string
+	VercelProjectID string
+	VercelTeamID    string
+
+	// DNS (optional, for UX feedback only)
+	DNSLookupEnabled bool
+
 	// Server
 	Port string
 }
@@ -55,6 +67,18 @@ func NewConfig() *Config {
 		AWSAccessKeyID:     getEnv("AWS_ACCESS_KEY_ID", ""),
 		AWSSecretAccessKey: getEnv("AWS_SECRET_ACCESS_KEY", ""),
 		S3BucketName:       getEnv("S3_BUCKET_NAME", "lvos-files"),
+
+		// GCP Cloud Storage
+		GCSBucketName: getEnv("GCS_BUCKET_NAME", "farohq-files"),
+		GCSProjectID:  getEnv("GCS_PROJECT_ID", ""),
+
+		// Vercel API
+		VercelAPIToken:  getEnv("VERCEL_API_TOKEN", ""),
+		VercelProjectID: getEnv("VERCEL_PROJECT_ID", ""),
+		VercelTeamID:    getEnv("VERCEL_TEAM_ID", ""),
+
+		// DNS (optional)
+		DNSLookupEnabled: getEnv("DNS_LOOKUP_ENABLED", "false") == "true",
 
 		// Server
 		Port: getEnv("PORT", "8080"),

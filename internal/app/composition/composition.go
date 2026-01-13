@@ -1,6 +1,7 @@
 package composition
 
 import (
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -10,11 +11,15 @@ import (
 	auth_http "farohq-core-app/internal/domains/auth/infra/http"
 	brand_usecases "farohq-core-app/internal/domains/brand/app/usecases"
 	brand_db "farohq-core-app/internal/domains/brand/infra/db"
+	brand_dns "farohq-core-app/internal/domains/brand/infra/dns"
 	brand_http "farohq-core-app/internal/domains/brand/infra/http"
+	brand_vercel "farohq-core-app/internal/domains/brand/infra/vercel"
 	files_usecases "farohq-core-app/internal/domains/files/app/usecases"
 	files_services "farohq-core-app/internal/domains/files/domain/services"
 	files_http "farohq-core-app/internal/domains/files/infra/http"
+	"farohq-core-app/internal/domains/files/infra/gcs"
 	"farohq-core-app/internal/domains/files/infra/s3"
+	files_outbound "farohq-core-app/internal/domains/files/domain/ports/outbound"
 	tenants_usecases "farohq-core-app/internal/domains/tenants/app/usecases"
 	tenants_services "farohq-core-app/internal/domains/tenants/domain/services"
 	tenants_db "farohq-core-app/internal/domains/tenants/infra/db"
@@ -42,7 +47,7 @@ func (c *Composition) RegisterPublicRoutes(r chi.Router) {
 
 // RegisterProtectedRoutes registers protected routes (auth required)
 func (c *Composition) RegisterProtectedRoutes(r chi.Router) {
-	// Register all domain routes
+	// Register all domain routes (this includes /tenants routes including /tenants/my-orgs)
 	c.TenantHandlers.RegisterRoutes(r)
 	c.BrandHandlers.RegisterRoutes(r)
 	c.FilesHandlers.RegisterRoutes(r)
@@ -109,19 +114,39 @@ func NewComposition(
 	assetValidator := files_services.NewAssetValidator()
 	keyGenerator := files_services.NewKeyGenerator()
 
-	// Initialize storage
-	storage, err := s3.NewStorage(cfg.AWSRegion, cfg.S3BucketName)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed to initialize S3 storage")
+	// Initialize storage (GCS for production, S3 for local dev/fallback)
+	var fileStorage files_outbound.Storage
+	var storageBucket string
+	if cfg.GCSBucketName != "" {
+		// Use GCS for production
+		gcsStorage, err := gcs.NewStorage(cfg.GCSBucketName, cfg.GCSProjectID, os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+		if err != nil {
+			logger.Fatal().Err(err).Msg("Failed to initialize GCS storage")
+		}
+		fileStorage = gcsStorage
+		storageBucket = cfg.GCSBucketName
+	} else {
+		// Fallback to S3 for local development
+		s3Storage, err := s3.NewStorage(cfg.AWSRegion, cfg.S3BucketName)
+		if err != nil {
+			logger.Fatal().Err(err).Msg("Failed to initialize S3 storage")
+		}
+		fileStorage = s3Storage
+		storageBucket = cfg.S3BucketName
 	}
+
+	storage := fileStorage
 
 	// Initialize tenant use cases
 	createTenant := tenants_usecases.NewCreateTenant(tenantRepo)
+	onboardTenant := tenants_usecases.NewOnboardTenant(tenantRepo, tenantMemberRepo)
 	getTenant := tenants_usecases.NewGetTenant(tenantRepo)
 	updateTenant := tenants_usecases.NewUpdateTenant(tenantRepo)
 	inviteMember := tenants_usecases.NewInviteMember(inviteRepo, tenantMemberRepo, tenantRepo, seatValidator, 7*24*time.Hour)
 	acceptInvite := tenants_usecases.NewAcceptInvite(inviteRepo, tenantMemberRepo)
 	listMembers := tenants_usecases.NewListMembers(tenantMemberRepo, tenantRepo)
+	listTenantsByUser := tenants_usecases.NewListTenantsByUser(tenantMemberRepo, tenantRepo)
+	validateSlug := tenants_usecases.NewValidateSlug(tenantRepo)
 	removeMember := tenants_usecases.NewRemoveMember(tenantMemberRepo, tenantRepo)
 	listRoles := tenants_usecases.NewListRoles(tenantRepo)
 	createClient := tenants_usecases.NewCreateClient(clientRepo, tenantRepo, seatValidator)
@@ -136,18 +161,35 @@ func NewComposition(
 	updateLocation := tenants_usecases.NewUpdateLocation(locationRepo)
 	getSeatUsage := tenants_usecases.NewGetSeatUsage(tenantRepo, clientRepo, clientMemberRepo, locationRepo)
 
+	// Initialize Vercel service (required - source of truth for domain operations)
+	vercelService := brand_vercel.NewVercelService(
+		cfg.VercelAPIToken,
+		cfg.VercelProjectID,
+		cfg.VercelTeamID,
+		logger,
+	)
+
+	// Initialize DNS service (optional - UX feedback only)
+	var dnsService *brand_dns.DNSService
+	if cfg.DNSLookupEnabled {
+		dnsService = brand_dns.NewDNSService(logger)
+	}
+
 	// Initialize brand use cases
 	getByDomain := brand_usecases.NewGetByDomain(brandRepo)
 	getByHost := brand_usecases.NewGetByHost(brandRepo, tenantRepo)
 	listBrands := brand_usecases.NewListBrands(brandRepo)
-	createBrand := brand_usecases.NewCreateBrand(brandRepo)
-	getBrand := brand_usecases.NewGetBrand(brandRepo)
-	updateBrand := brand_usecases.NewUpdateBrand(brandRepo)
+	createBrand := brand_usecases.NewCreateBrand(brandRepo, tenantRepo)
+	getBrand := brand_usecases.NewGetBrand(brandRepo, tenantRepo)
+	updateBrand := brand_usecases.NewUpdateBrand(brandRepo, tenantRepo)
 	deleteBrand := brand_usecases.NewDeleteBrand(brandRepo)
+	verifyDomain := brand_usecases.NewVerifyDomain(brandRepo, tenantRepo, vercelService, dnsService)
+	getDomainStatus := brand_usecases.NewGetDomainStatus(brandRepo, tenantRepo, vercelService)
+	getDomainInstructions := brand_usecases.NewGetDomainInstructions(brandRepo, tenantRepo, vercelService)
 
 	// Initialize files use cases
-	signUpload := files_usecases.NewSignUpload(storage, assetValidator, keyGenerator, cfg.S3BucketName, 10*time.Minute)
-	deleteFile := files_usecases.NewDeleteFile(storage, keyGenerator, cfg.S3BucketName)
+	signUpload := files_usecases.NewSignUpload(storage, assetValidator, keyGenerator, storageBucket, 10*time.Minute)
+	deleteFile := files_usecases.NewDeleteFile(storage, keyGenerator, storageBucket)
 
 	// Initialize user use cases
 	syncUser := users_usecases.NewSyncUser(userRepo)
@@ -156,6 +198,7 @@ func NewComposition(
 	tenantHandlers := tenants_http.NewHandlers(
 		logger,
 		createTenant,
+		onboardTenant,
 		getTenant,
 		updateTenant,
 		inviteMember,
@@ -174,6 +217,9 @@ func NewComposition(
 		listLocations,
 		updateLocation,
 		getSeatUsage,
+		listTenantsByUser,
+		validateSlug,
+		userRepo,
 	)
 
 	brandHandlers := brand_http.NewHandlers(
@@ -185,6 +231,10 @@ func NewComposition(
 		getBrand,
 		updateBrand,
 		deleteBrand,
+		verifyDomain,
+		getDomainStatus,
+		getDomainInstructions,
+		tenantRepo,
 	)
 
 	filesHandlers := files_http.NewHandlers(

@@ -12,6 +12,8 @@ import (
 type BrandRepository interface {
 	FindByAgencyID(ctx context.Context, agencyID uuid.UUID) (*model.Branding, error)
 	FindByDomain(ctx context.Context, domain string) (*model.Branding, error)
+	FindBySubdomain(ctx context.Context, subdomain string) (*model.Branding, error)
+	CheckSubdomainExists(ctx context.Context, subdomain string) (bool, error)
 	Save(ctx context.Context, branding *model.Branding) error
 	Update(ctx context.Context, branding *model.Branding) error
 	Delete(ctx context.Context, agencyID uuid.UUID) error

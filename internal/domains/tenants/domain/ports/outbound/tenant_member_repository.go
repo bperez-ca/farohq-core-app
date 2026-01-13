@@ -13,6 +13,7 @@ type TenantMemberRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*model.TenantMember, error)
 	FindByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*model.TenantMember, error)
 	FindByTenantAndUserID(ctx context.Context, tenantID, userID uuid.UUID) (*model.TenantMember, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]*model.TenantMember, error)
 	Save(ctx context.Context, member *model.TenantMember) error
 	Update(ctx context.Context, member *model.TenantMember) error
 	Delete(ctx context.Context, id uuid.UUID) error

@@ -236,6 +236,48 @@ func (r *TenantMemberRepository) DeleteByTenantAndUserID(ctx context.Context, te
 	return nil
 }
 
+// FindByUserID finds all tenant members for a user
+func (r *TenantMemberRepository) FindByUserID(ctx context.Context, userID uuid.UUID) ([]*model.TenantMember, error) {
+	query := `
+		SELECT id, tenant_id, user_id, role, client_id, created_at, updated_at, deleted_at
+		FROM tenant_members
+		WHERE user_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at ASC
+	`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var members []*model.TenantMember
+	for rows.Next() {
+		var (
+			id         uuid.UUID
+			tenantID   uuid.UUID
+			dbUserID   uuid.UUID
+			role       string
+			clientID   *uuid.UUID
+			createdAt  time.Time
+			updatedAt  time.Time
+			deletedAt  *time.Time
+		)
+
+		if err := rows.Scan(&id, &tenantID, &dbUserID, &role, &clientID, &createdAt, &updatedAt, &deletedAt); err != nil {
+			return nil, err
+		}
+
+		members = append(members, r.mapToDomainMember(id, tenantID, dbUserID, role, clientID, createdAt, updatedAt, deletedAt))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return members, nil
+}
+
 // CountByTenantID counts active members for a tenant
 func (r *TenantMemberRepository) CountByTenantID(ctx context.Context, tenantID uuid.UUID) (int, error) {
 	query := `

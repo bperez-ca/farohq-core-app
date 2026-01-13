@@ -39,3 +39,17 @@ Thumbs.db
 dist/
 build/
 
+# E2E test results (if any)
+/test-results/
+*.webm
+*.png
+error-context.md
+.last-run.json
+
+# Other project directories (prevent accidental inclusion)
+../farohq-portal/test-results/
+../farohq-static-site/
+../lvos/
+../farohq-landing-mocks/
+../faro-mocks/
+

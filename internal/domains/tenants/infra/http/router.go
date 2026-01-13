@@ -9,6 +9,9 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	// Tenants routes
 	r.Route("/tenants", func(r chi.Router) {
 		r.Post("/", h.CreateTenantHandler)
+		r.Post("/onboard", h.OnboardTenantHandler)
+		r.Get("/my-orgs", h.ListTenantsByUserHandler)
+		r.Get("/validate-slug", h.ValidateSlugHandler)
 		r.Get("/{id}", h.GetTenantHandler)
 		r.Put("/{id}", h.UpdateTenantHandler)
 		r.Post("/{id}/invites", h.InviteMemberHandler)
