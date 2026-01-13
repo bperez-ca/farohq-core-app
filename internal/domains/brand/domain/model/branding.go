@@ -318,9 +318,7 @@ func GenerateSubdomain(agencySlug string) string {
 		slug = "agency"
 	}
 	return slug + ".app.farohq.com"
-}
-
-// GenerateSubdomainWithFallback generates a subdomain with uniqueness check fallback
+}// GenerateSubdomainWithFallback generates a subdomain with uniqueness check fallback
 // If base subdomain exists, appends a number (e.g., agency-2.app.farohq.com)
 func GenerateSubdomainWithFallback(agencySlug string, checkExists func(subdomain string) bool) string {
 	baseSubdomain := GenerateSubdomain(agencySlug)
@@ -407,5 +405,6 @@ func generateSlugFromText(text string) string {
 	// Ensure non-empty
 	if slug == "" {
 		return ""
-	}	return slug
+	}
+	return slug
 }

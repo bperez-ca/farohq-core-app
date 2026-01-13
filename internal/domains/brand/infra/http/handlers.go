@@ -510,10 +510,11 @@ func (h *Handlers) GetBySubdomainHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h.buildBrandResponse(r.Context(), resp.Branding))
-}// GetSSLStatusHandler handles GET /api/v1/brands/{brandId}/ssl-status
+}
+
+// GetSSLStatusHandler handles GET /api/v1/brands/{brandId}/ssl-status
 func (h *Handlers) GetSSLStatusHandler(w http.ResponseWriter, r *http.Request) {
 	// GetDomainStatus already returns SSL status, so we can reuse it
 	// Or we can call GetDomainStatus and extract SSL status

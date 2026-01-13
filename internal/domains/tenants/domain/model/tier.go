@@ -40,9 +40,7 @@ func TierSupportsCustomDomain(tier *Tier) bool {
 		return false
 	}
 	return *tier == TierScale
-}
-
-// TierCanHidePoweredBy checks if a tier can hide "Powered by Faro" badge
+}// TierCanHidePoweredBy checks if a tier can hide "Powered by Faro" badge
 // Growth+ tiers (growth, scale) can hide the badge
 func TierCanHidePoweredBy(tier *Tier) bool {
 	if tier == nil {
