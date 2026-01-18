@@ -12,9 +12,25 @@ Most API endpoints require authentication via Clerk JWT tokens. The authenticati
 ## Required Headers
 
 ### Authentication
-```
-Authorization: Bearer <clerk_jwt_token>
-```
+
+The backend supports multiple token header formats (checked in priority order):
+
+1. **Authorization header (standard, highest priority)**
+   ```
+   Authorization: Bearer <clerk_jwt_token>
+   ```
+
+2. **x-clerk-auth-token header (Clerk's automatic header)**
+   ```
+   x-clerk-auth-token: <clerk_jwt_token>
+   ```
+
+3. **X-Auth-Token header (custom fallback)**
+   ```
+   X-Auth-Token: <clerk_jwt_token>
+   ```
+
+**Note**: The `Authorization: Bearer` format is the recommended standard. Other formats are provided for compatibility with different client configurations.
 
 ### Tenant Resolution
 The backend resolves tenants in this order:
@@ -43,9 +59,12 @@ All endpoints under `/api/v1` except the public brand routes require authenticat
 ## Error Responses
 
 ### 401 Unauthorized
-- **Missing token**: `Authorization header required`
-- **Invalid token**: `Invalid token`
-- **Token verification failed**: `Failed to verify token`
+- **Missing token**: `Authorization header required` - No authentication token found in any supported header
+- **Invalid token**: `Invalid token` - Token is malformed, expired, or has invalid signature
+- **Token verification failed**: `Failed to verify token` - JWKS unavailable or token verification error
+
+### 500 Internal Server Error
+- **JWKS refresh failed**: `Failed to verify token` - Unable to refresh JWKS cache
 
 ### 400 Bad Request
 - **Missing tenant**: `Failed to resolve tenant` (when tenant resolution fails)
@@ -57,10 +76,70 @@ All endpoints under `/api/v1` except the public brand routes require authenticat
 
 ## Testing with curl
 
-### With Authentication Token
+### With Authentication Token (Authorization header)
 ```bash
 curl -H "Authorization: Bearer YOUR_CLERK_TOKEN" \
-     http://localhost:8080/api/v1/brands
+     http://localhost:8080/api/v1/auth/me
+```
+
+### With Authentication Token (x-clerk-auth-token header)
+```bash
+curl -H "x-clerk-auth-token: YOUR_CLERK_TOKEN" \
+     http://localhost:8080/api/v1/auth/me
+```
+
+### With Authentication Token (X-Auth-Token header)
+```bash
+curl -H "X-Auth-Token: YOUR_CLERK_TOKEN" \
+     http://localhost:8080/api/v1/auth/me
+```
+
+### Testing Error Responses
+```bash
+# Missing token
+curl http://localhost:8080/api/v1/auth/me
+# Expected: 401 Unauthorized - "Authorization header required"
+
+# Invalid token
+curl -H "Authorization: Bearer invalid-token" \
+     http://localhost:8080/api/v1/auth/me
+# Expected: 401 Unauthorized - "Invalid token"
+```
+
+## Troubleshooting
+
+### Token Not Accepted
+
+If your token is being rejected:
+
+1. **Check token format**: Ensure the token is a valid JWT
+2. **Check token expiration**: Verify the token hasn't expired
+3. **Check header format**: For Authorization header, ensure it's `Bearer <token>` (with space)
+4. **Check JWKS URL**: Verify `CLERK_JWKS_URL` environment variable is set correctly
+5. **Check logs**: Review backend logs for specific error messages:
+   - `missing_token`: No token found in any header
+   - `empty_token`: Token string is empty
+   - `token_expired`: Token has expired
+   - `token_signature_invalid`: Token signature doesn't match JWKS
+   - `token_malformed`: Token is not a valid JWT
+   - `jwks_unavailable`: Cannot fetch JWKS from Clerk
+
+### Multiple Token Sources
+
+The backend checks headers in priority order. If you're using multiple headers:
+- `Authorization` header will always be used if present (even if other headers also have tokens)
+- `x-clerk-auth-token` will be used if `Authorization` is missing
+- `X-Auth-Token` will be used if both above are missing
+
+### Logging
+
+The backend logs all authentication attempts with structured fields:
+- `token_source`: Which header provided the token
+- `auth_result`: `success` or `failure`
+- `auth_failure_reason`: Specific reason if authentication failed
+- `user_id`: Extracted user ID from token
+- `verify_duration_ms`: Time taken to verify token
+- `total_duration_ms`: Total authentication timehttp://localhost:8080/api/v1/brands
 ```
 
 ### With Tenant ID Header

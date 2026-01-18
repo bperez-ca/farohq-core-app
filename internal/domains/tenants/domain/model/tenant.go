@@ -9,15 +9,16 @@ import (
 // Tenant represents a tenant (agency) in the system
 // Note: This references the existing agencies table
 type Tenant struct {
-	id              uuid.UUID
-	name            string
-	slug            string
-	status          TenantStatus
-	tier            *Tier
-	agencySeatLimit int
-	createdAt       time.Time
-	updatedAt       time.Time
-	deletedAt       *time.Time
+	id               uuid.UUID
+	name             string
+	slug             string
+	status           TenantStatus
+	tier             *Tier
+	agencySeatLimit  int
+	inviteExpiryHours *int // Configurable invitation expiration in hours (max 72 = 3 days)
+	createdAt        time.Time
+	updatedAt        time.Time
+	deletedAt        *time.Time
 }
 
 // TenantStatus represents the status of a tenant
@@ -30,33 +31,40 @@ const (
 )
 
 // NewTenant creates a new tenant entity
-func NewTenant(name, slug string, tier *Tier, agencySeatLimit int) *Tenant {
+func NewTenant(name, slug string, tier *Tier, agencySeatLimit int, inviteExpiryHours *int) *Tenant {
 	now := time.Now()
+	// Default to 24 hours if not specified
+	defaultExpiry := 24
+	if inviteExpiryHours == nil {
+		inviteExpiryHours = &defaultExpiry
+	}
 	return &Tenant{
-		id:              uuid.New(),
-		name:            name,
-		slug:            slug,
-		status:          TenantStatusActive,
-		tier:            tier,
-		agencySeatLimit: agencySeatLimit,
-		createdAt:       now,
-		updatedAt:       now,
-		deletedAt:       nil,
+		id:               uuid.New(),
+		name:             name,
+		slug:             slug,
+		status:           TenantStatusActive,
+		tier:             tier,
+		agencySeatLimit:  agencySeatLimit,
+		inviteExpiryHours: inviteExpiryHours,
+		createdAt:        now,
+		updatedAt:        now,
+		deletedAt:        nil,
 	}
 }
 
 // NewTenantWithID creates a tenant entity with a specific ID (used for reconstruction from database)
-func NewTenantWithID(id uuid.UUID, name, slug string, status TenantStatus, tier *Tier, agencySeatLimit int, createdAt, updatedAt time.Time, deletedAt *time.Time) *Tenant {
+func NewTenantWithID(id uuid.UUID, name, slug string, status TenantStatus, tier *Tier, agencySeatLimit int, inviteExpiryHours *int, createdAt, updatedAt time.Time, deletedAt *time.Time) *Tenant {
 	return &Tenant{
-		id:              id,
-		name:            name,
-		slug:            slug,
-		status:          status,
-		tier:            tier,
-		agencySeatLimit: agencySeatLimit,
-		createdAt:       createdAt,
-		updatedAt:       updatedAt,
-		deletedAt:       deletedAt,
+		id:               id,
+		name:             name,
+		slug:             slug,
+		status:           status,
+		tier:             tier,
+		agencySeatLimit:  agencySeatLimit,
+		inviteExpiryHours: inviteExpiryHours,
+		createdAt:        createdAt,
+		updatedAt:        updatedAt,
+		deletedAt:        deletedAt,
 	}
 }
 
@@ -133,6 +141,32 @@ func (t *Tenant) SetTier(tier *Tier) {
 func (t *Tenant) SetAgencySeatLimit(limit int) {
 	t.agencySeatLimit = limit
 	t.updatedAt = time.Now()
+}
+
+// InviteExpiryHours returns the invitation expiration in hours (nil means use default 24 hours)
+func (t *Tenant) InviteExpiryHours() *int {
+	return t.inviteExpiryHours
+}
+
+// SetInviteExpiryHours sets the invitation expiration in hours (1-72 hours, max 3 days)
+func (t *Tenant) SetInviteExpiryHours(hours *int) {
+	if hours != nil && (*hours < 1 || *hours > 72) {
+		// Invalid value, reset to default
+		defaultExpiry := 24
+		t.inviteExpiryHours = &defaultExpiry
+	} else {
+		t.inviteExpiryHours = hours
+	}
+	t.updatedAt = time.Now()
+}
+
+// InviteExpiryDuration returns the invitation expiration as a time.Duration
+// Defaults to 24 hours if inviteExpiryHours is nil
+func (t *Tenant) InviteExpiryDuration() time.Duration {
+	if t.inviteExpiryHours == nil {
+		return 24 * time.Hour
+	}
+	return time.Duration(*t.inviteExpiryHours) * time.Hour
 }
 
 // IsActive checks if the tenant is active

@@ -15,6 +15,7 @@ type Invite struct {
 	token      string
 	expiresAt  time.Time
 	acceptedAt *time.Time
+	revokedAt  *time.Time
 	createdAt  time.Time
 	createdBy  uuid.UUID
 }
@@ -35,7 +36,7 @@ func NewInvite(tenantID uuid.UUID, email string, role Role, token string, create
 }
 
 // NewInviteWithID creates an invite entity with a specific ID (used for reconstruction from database)
-func NewInviteWithID(id, tenantID uuid.UUID, email string, role Role, token string, expiresAt time.Time, acceptedAt *time.Time, createdAt time.Time, createdBy uuid.UUID) *Invite {
+func NewInviteWithID(id, tenantID uuid.UUID, email string, role Role, token string, expiresAt time.Time, acceptedAt *time.Time, revokedAt *time.Time, createdAt time.Time, createdBy uuid.UUID) *Invite {
 	return &Invite{
 		id:         id,
 		tenantID:   tenantID,
@@ -44,6 +45,7 @@ func NewInviteWithID(id, tenantID uuid.UUID, email string, role Role, token stri
 		token:      token,
 		expiresAt:  expiresAt,
 		acceptedAt: acceptedAt,
+		revokedAt:  revokedAt,
 		createdAt:  createdAt,
 		createdBy:  createdBy,
 	}
@@ -108,5 +110,21 @@ func (i *Invite) IsAccepted() bool {
 func (i *Invite) Accept() {
 	now := time.Now()
 	i.acceptedAt = &now
+}
+
+// RevokedAt returns the revocation timestamp (nil if not revoked)
+func (i *Invite) RevokedAt() *time.Time {
+	return i.revokedAt
+}
+
+// IsRevoked checks if the invite has been revoked
+func (i *Invite) IsRevoked() bool {
+	return i.revokedAt != nil
+}
+
+// Revoke marks the invite as revoked
+func (i *Invite) Revoke() {
+	now := time.Now()
+	i.revokedAt = &now
 }
 

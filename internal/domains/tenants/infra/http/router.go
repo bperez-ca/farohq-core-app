@@ -4,6 +4,18 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// RegisterPublicRoutes registers public tenant routes (no auth required)
+func (h *Handlers) RegisterPublicRoutes(r chi.Router) {
+	// Public invite route (for branding and validation) - GET /api/v1/invites/{token}
+	// Note: This is registered separately from the protected /invites/accept route
+	// to avoid route conflicts. The accept route is registered in main.go as a protected route.
+	// IMPORTANT: Register specific routes BEFORE parameterized routes to avoid conflicts.
+	// The /invites/by-email route is protected and registered in main.go, but we need to ensure
+	// the parameterized route doesn't match it. Since public routes are registered first,
+	// we register a placeholder here that will be overridden by the protected route.
+	r.Get("/invites/{token}", h.GetInviteByTokenHandler)
+}
+
 // RegisterRoutes registers all tenant domain routes
 func (h *Handlers) RegisterRoutes(r chi.Router) {
 	// Tenants routes
@@ -15,6 +27,8 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Get("/{id}", h.GetTenantHandler)
 		r.Put("/{id}", h.UpdateTenantHandler)
 		r.Post("/{id}/invites", h.InviteMemberHandler)
+		r.Get("/{id}/invites", h.ListInvitesHandler)
+		r.Delete("/{id}/invites/{invite_id}", h.RevokeInviteHandler)
 		r.Get("/{id}/members", h.ListMembersHandler)
 		r.Delete("/{id}/members/{user_id}", h.RemoveMemberHandler)
 		r.Get("/{id}/roles", h.ListRolesHandler)
@@ -40,4 +54,3 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Put("/{id}", h.UpdateLocationHandler)
 	})
 }
-

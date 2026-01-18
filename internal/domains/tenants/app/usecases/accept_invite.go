@@ -53,6 +53,11 @@ func (uc *AcceptInvite) Execute(ctx context.Context, req *AcceptInviteRequest) (
 		return nil, domain.ErrInviteExpired
 	}
 
+	// Check if invite has been revoked
+	if invite.IsRevoked() {
+		return nil, domain.ErrInviteRevoked
+	}
+
 	// Check if user is already a member
 	existingMember, err := uc.memberRepo.FindByTenantAndUserID(ctx, invite.TenantID(), req.UserID)
 	if err == nil && existingMember != nil {

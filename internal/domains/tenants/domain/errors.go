@@ -33,6 +33,12 @@ var (
 	// ErrInviteAlreadyAccepted is returned when an invite has already been accepted
 	ErrInviteAlreadyAccepted = errors.New("invite already accepted")
 
+	// ErrInviteRevoked is returned when an invite has been revoked
+	ErrInviteRevoked = errors.New("invite revoked")
+
+	// ErrPendingInviteExists is returned when a pending invite already exists for the email/tenant
+	ErrPendingInviteExists = errors.New("a pending invitation already exists for this email")
+
 	// ErrInvalidEmail is returned when an email is invalid
 	ErrInvalidEmail = errors.New("invalid email")
 
@@ -57,4 +63,3 @@ var (
 	// ErrClientSeatLimitExceeded is returned when client seat limit is exceeded
 	ErrClientSeatLimitExceeded = errors.New("client seat limit exceeded")
 )
-

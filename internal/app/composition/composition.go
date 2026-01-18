@@ -1,34 +1,62 @@
 package composition
 
 import (
+	"context"
 	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
 	auth_http "farohq-core-app/internal/domains/auth/infra/http"
 	brand_usecases "farohq-core-app/internal/domains/brand/app/usecases"
+	brand_outbound "farohq-core-app/internal/domains/brand/domain/ports/outbound"
 	brand_db "farohq-core-app/internal/domains/brand/infra/db"
 	brand_dns "farohq-core-app/internal/domains/brand/infra/dns"
 	brand_http "farohq-core-app/internal/domains/brand/infra/http"
 	brand_vercel "farohq-core-app/internal/domains/brand/infra/vercel"
 	files_usecases "farohq-core-app/internal/domains/files/app/usecases"
-	files_services "farohq-core-app/internal/domains/files/domain/services"
-	files_http "farohq-core-app/internal/domains/files/infra/http"
-	"farohq-core-app/internal/domains/files/infra/gcs"
-	"farohq-core-app/internal/domains/files/infra/s3"
 	files_outbound "farohq-core-app/internal/domains/files/domain/ports/outbound"
+	files_services "farohq-core-app/internal/domains/files/domain/services"
+	"farohq-core-app/internal/domains/files/infra/gcs"
+	files_http "farohq-core-app/internal/domains/files/infra/http"
+	"farohq-core-app/internal/domains/files/infra/s3"
 	tenants_usecases "farohq-core-app/internal/domains/tenants/app/usecases"
+	tenants_outbound "farohq-core-app/internal/domains/tenants/domain/ports/outbound"
 	tenants_services "farohq-core-app/internal/domains/tenants/domain/services"
 	tenants_db "farohq-core-app/internal/domains/tenants/infra/db"
+	tenants_email "farohq-core-app/internal/domains/tenants/infra/email"
 	tenants_http "farohq-core-app/internal/domains/tenants/infra/http"
 	users_usecases "farohq-core-app/internal/domains/users/app/usecases"
+	users_outbound "farohq-core-app/internal/domains/users/domain/ports/outbound"
 	users_db "farohq-core-app/internal/domains/users/infra/db"
 	users_http "farohq-core-app/internal/domains/users/infra/http"
 	"farohq-core-app/internal/platform/config"
 )
+
+// brandRepositoryAdapter adapts brand repository to the interface expected by invite use case
+type brandRepositoryAdapter struct {
+	brandRepo brand_outbound.BrandRepository
+}
+
+func (a *brandRepositoryAdapter) FindByAgencyID(ctx context.Context, agencyID uuid.UUID) (tenants_usecases.BrandingInfo, error) {
+	return a.brandRepo.FindByAgencyID(ctx, agencyID)
+}
+
+// userRepositoryAdapter adapts user repository to the interface expected by invite use case
+// Note: Currently, UserRepository only supports FindByClerkUserID, not FindByID
+// For now, we'll return nil to make user lookup optional
+type userRepositoryAdapter struct {
+	userRepo users_outbound.UserRepository
+}
+
+func (a *userRepositoryAdapter) FindByID(ctx context.Context, userID uuid.UUID) (tenants_usecases.UserInfo, error) {
+	// TODO: Add FindByID to UserRepository interface and implementation
+	// For now, return nil to make user lookup optional (inviter info will be empty)
+	return nil, nil
+}
 
 // Composition wires all domains together
 type Composition struct {
@@ -37,12 +65,15 @@ type Composition struct {
 	FilesHandlers  *files_http.Handlers
 	AuthHandlers   *auth_http.Handlers
 	UserHandlers   *users_http.Handlers
+	UserRepo       users_outbound.UserRepository // Expose user repo for tenant resolution middleware
 }
 
 // RegisterPublicRoutes registers public routes (no auth required)
 func (c *Composition) RegisterPublicRoutes(r chi.Router) {
 	// Public brand routes
 	c.BrandHandlers.RegisterPublicRoutes(r)
+	// Public tenant routes (invite details)
+	c.TenantHandlers.RegisterPublicRoutes(r)
 }
 
 // RegisterProtectedRoutes registers protected routes (auth required)
@@ -63,6 +94,8 @@ func (c *Composition) RegisterProtectedRoutesWithTenant(r chi.Router) {
 	r.Get("/tenants/{id}", c.TenantHandlers.GetTenantHandler)
 	r.Put("/tenants/{id}", c.TenantHandlers.UpdateTenantHandler)
 	r.Post("/tenants/{id}/invites", c.TenantHandlers.InviteMemberHandler)
+	r.Get("/tenants/{id}/invites", c.TenantHandlers.ListInvitesHandler)
+	r.Delete("/tenants/{id}/invites/{invite_id}", c.TenantHandlers.RevokeInviteHandler)
 	r.Get("/tenants/{id}/members", c.TenantHandlers.ListMembersHandler)
 	r.Delete("/tenants/{id}/members/{user_id}", c.TenantHandlers.RemoveMemberHandler)
 	r.Get("/tenants/{id}/roles", c.TenantHandlers.ListRolesHandler)
@@ -99,7 +132,7 @@ func NewComposition(
 	cfg *config.Config,
 	logger zerolog.Logger,
 ) *Composition {
-		// Initialize repositories
+	// Initialize repositories
 	tenantRepo := tenants_db.NewTenantRepository(db)
 	tenantMemberRepo := tenants_db.NewTenantMemberRepository(db)
 	inviteRepo := tenants_db.NewInviteRepository(db)
@@ -137,13 +170,37 @@ func NewComposition(
 
 	storage := fileStorage
 
+	// Initialize email service (environment-based selection)
+	var emailService tenants_outbound.EmailService
+	if cfg.PostmarkAPIToken != "" {
+		// Use Postmark for production/staging
+		emailService = tenants_email.NewPostmarkEmailService(cfg.PostmarkAPIToken, cfg.PostmarkFromEmail, logger)
+		logger.Info().Msg("Using Postmark email service")
+	} else if cfg.Environment == "development" || cfg.MailhogHost != "" {
+		// Use Mailhog for local development
+		emailService = tenants_email.NewMailhogEmailService(cfg.MailhogHost, cfg.MailhogPort, logger)
+		logger.Info().Str("host", cfg.MailhogHost).Str("port", cfg.MailhogPort).Msg("Using Mailhog email service")
+	} else {
+		// Fallback to no-op email service (log only)
+		emailService = tenants_email.NewNoopEmailService(logger)
+		logger.Warn().Msg("No email service configured, using no-op email service")
+	}
+
 	// Initialize tenant use cases
 	createTenant := tenants_usecases.NewCreateTenant(tenantRepo)
 	onboardTenant := tenants_usecases.NewOnboardTenant(tenantRepo, tenantMemberRepo)
 	getTenant := tenants_usecases.NewGetTenant(tenantRepo)
 	updateTenant := tenants_usecases.NewUpdateTenant(tenantRepo)
-	inviteMember := tenants_usecases.NewInviteMember(inviteRepo, tenantMemberRepo, tenantRepo, seatValidator, 7*24*time.Hour)
+	// Create adapters for brand and user repositories to match use case interfaces
+	brandRepoAdapter := &brandRepositoryAdapter{brandRepo: brandRepo}
+	userRepoAdapter := &userRepositoryAdapter{userRepo: userRepo}
+
+	inviteMember := tenants_usecases.NewInviteMember(inviteRepo, tenantMemberRepo, tenantRepo, brandRepoAdapter, userRepoAdapter, emailService, seatValidator, 7*24*time.Hour, cfg.WebURL)
 	acceptInvite := tenants_usecases.NewAcceptInvite(inviteRepo, tenantMemberRepo)
+	listInvites := tenants_usecases.NewListInvites(inviteRepo, tenantRepo)
+	findInvitesByEmail := tenants_usecases.NewFindInvitesByEmail(inviteRepo)
+	revokeInvite := tenants_usecases.NewRevokeInvite(inviteRepo, tenantRepo)
+	deleteInvite := tenants_usecases.NewDeleteInvite(inviteRepo, tenantRepo)
 	listMembers := tenants_usecases.NewListMembers(tenantMemberRepo, tenantRepo)
 	listTenantsByUser := tenants_usecases.NewListTenantsByUser(tenantMemberRepo, tenantRepo)
 	validateSlug := tenants_usecases.NewValidateSlug(tenantRepo)
@@ -203,6 +260,10 @@ func NewComposition(
 		updateTenant,
 		inviteMember,
 		acceptInvite,
+		listInvites,
+		findInvitesByEmail,
+		revokeInvite,
+		deleteInvite,
 		listMembers,
 		removeMember,
 		listRoles,
@@ -220,6 +281,9 @@ func NewComposition(
 		listTenantsByUser,
 		validateSlug,
 		userRepo,
+		inviteRepo,
+		tenantRepo,
+		brandRepo,
 	)
 
 	brandHandlers := brand_http.NewHandlers(
@@ -256,6 +320,6 @@ func NewComposition(
 		FilesHandlers:  filesHandlers,
 		AuthHandlers:   authHandlers,
 		UserHandlers:   userHandlers,
+		UserRepo:       userRepo,
 	}
 }
-

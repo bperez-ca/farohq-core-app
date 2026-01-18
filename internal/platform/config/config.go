@@ -41,8 +41,18 @@ type Config struct {
 	// DNS (optional, for UX feedback only)
 	DNSLookupEnabled bool
 
+	// Email Service Configuration
+	PostmarkAPIToken  string
+	PostmarkFromEmail string
+	MailhogHost       string
+	MailhogPort       string
+	Environment       string
+
 	// Server
 	Port string
+
+	// Redis/Dragonfly Cache
+	RedisURL string
 }
 
 // NewConfig creates a new configuration from environment variables
@@ -80,8 +90,18 @@ func NewConfig() *Config {
 		// DNS (optional)
 		DNSLookupEnabled: getEnv("DNS_LOOKUP_ENABLED", "false") == "true",
 
+		// Email Service
+		PostmarkAPIToken:  getEnv("POSTMARK_API_TOKEN", ""),
+		PostmarkFromEmail: getEnv("POSTMARK_FROM_EMAIL", ""),
+		MailhogHost:       getEnv("MAILHOG_HOST", "localhost"),
+		MailhogPort:       getEnv("MAILHOG_PORT", "8025"),
+		Environment:       getEnv("ENVIRONMENT", "development"),
+
 		// Server
 		Port: getEnv("PORT", "8080"),
+
+		// Redis/Dragonfly Cache
+		RedisURL: getEnv("REDIS_URL", "redis://localhost:6379"),
 	}
 
 	return cfg
@@ -139,4 +159,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-

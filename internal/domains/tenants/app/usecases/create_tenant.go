@@ -55,8 +55,8 @@ func (uc *CreateTenant) Execute(ctx context.Context, req *CreateTenantRequest) (
 		return nil, domain.ErrTenantAlreadyExists
 	}
 
-	// Create new tenant
-	tenant := model.NewTenant(strings.TrimSpace(req.Name), slug, req.Tier, req.AgencySeatLimit)
+	// Create new tenant (inviteExpiryHours defaults to 24 hours if nil)
+	tenant := model.NewTenant(strings.TrimSpace(req.Name), slug, req.Tier, req.AgencySeatLimit, nil)
 
 	// Save tenant
 	if err := uc.tenantRepo.Save(ctx, tenant); err != nil {
