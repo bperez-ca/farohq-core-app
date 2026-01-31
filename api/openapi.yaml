@@ -1,0 +1,1190 @@
+openapi: 3.0.3
+info:
+  title: FaroHQ Core App API
+  description: |
+    API for FaroHQ Core App - A modular monolith providing brand management, file storage, and tenant management.
+    
+    Authentication is handled via Clerk JWT tokens. Protected endpoints require a Bearer token in the Authorization header.
+  version: 1.0.0
+  contact:
+    name: FaroHQ Support
+    email: support@farohq.com
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.farohq.com
+    description: Production server
+
+tags:
+  - name: Tenants
+    description: Tenant (Agency) management endpoints
+  - name: Clients
+    description: Client (SMB) management endpoints
+  - name: Locations
+    description: Location management endpoints
+  - name: Client Members
+    description: Client member management endpoints
+  - name: Brand
+    description: Branding and white-label management
+  - name: Files
+    description: File upload and management
+  - name: Health
+    description: Health check endpoints
+
+  # Note: Brand and Files endpoints are defined below but schemas may need expansion
+  # The existing BrandApi and FilesApi in the SDK already have Bearer auth implemented
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/v1/tenants:
+    post:
+      tags:
+        - Tenants
+      summary: Create a new tenant (agency)
+      description: Creates a new tenant with tier and seat limit configuration
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          description: Tenant created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/tenants/{id}:
+    get:
+      tags:
+        - Tenants
+      summary: Get tenant by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+        - Tenants
+      summary: Update tenant
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantRequest'
+      responses:
+        '200':
+          description: Tenant updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/tenants/{id}/clients:
+    post:
+      tags:
+        - Clients
+      summary: Create a new client (SMB account)
+      description: Creates a new client under the specified agency with tier limit validation
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClientRequest'
+      responses:
+        '201':
+          description: Client created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+        - Clients
+      summary: List clients for an agency
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clients:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/tenants/{id}/seat-usage:
+    get:
+      tags:
+        - Tenants
+      summary: Get seat usage statistics
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Seat usage information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeatUsage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/clients/{id}:
+    get:
+      tags:
+        - Clients
+      summary: Get client by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      responses:
+        '200':
+          description: Client details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+        - Clients
+      summary: Update client
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateClientRequest'
+      responses:
+        '200':
+          description: Client updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/clients/{id}/members:
+    post:
+      tags:
+        - Client Members
+      summary: Add a member to a client
+      description: Adds a member to a client with seat validation (1 base + 1 per location)
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddClientMemberRequest'
+      responses:
+        '201':
+          description: Member added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+        - Client Members
+      summary: List client members
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+        - name: location_id
+          in: query
+          description: Optional filter by location ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of client members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ClientMember'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/clients/{id}/members/{memberId}:
+    delete:
+      tags:
+        - Client Members
+      summary: Remove a client member
+      description: Soft deletes a client member
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Member removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/clients/{id}/locations:
+    post:
+      tags:
+        - Locations
+      summary: Create a location for a client
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLocationRequest'
+      responses:
+        '201':
+          description: Location created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+        - Locations
+      summary: List locations for a client
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      responses:
+        '200':
+          description: List of locations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  locations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Location'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/locations/{id}:
+    put:
+      tags:
+        - Locations
+      summary: Update a location
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLocationRequest'
+      responses:
+        '200':
+          description: Location updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Brand endpoints (public and protected)
+  /api/v1/brand/by-domain:
+    get:
+      tags:
+        - Brand
+      summary: Get branding by domain (public)
+      description: Public endpoint - no auth required
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Branding configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branding'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/brand/by-host:
+    get:
+      tags:
+        - Brand
+      summary: Get branding by host (public)
+      description: Public endpoint - no auth required
+      parameters:
+        - name: host
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Branding configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branding'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/brands:
+    get:
+      tags:
+        - Brand
+      summary: List brands
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of brands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Branding'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - Brand
+      summary: Create brand
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandingInput'
+      responses:
+        '201':
+          description: Brand created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branding'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/brands/{brandId}:
+    get:
+      tags:
+        - Brand
+      summary: Get brand by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Brand details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branding'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+        - Brand
+      summary: Update brand
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandingInput'
+      responses:
+        '200':
+          description: Brand updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branding'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+        - Brand
+      summary: Delete brand
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Brand deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Files endpoints (all protected)
+  /api/v1/files/sign:
+    post:
+      tags:
+        - Files
+      summary: Generate pre-signed upload URL
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignRequest'
+      responses:
+        '200':
+          description: Pre-signed URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/files:
+    get:
+      tags:
+        - Files
+      summary: List files
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - Files
+      summary: Upload file
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/files/{fileId}:
+    get:
+      tags:
+        - Files
+      summary: Get file info
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: File details
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+        - Files
+      summary: Update file
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: File updated
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+        - Files
+      summary: Delete file
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: File deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/files/{fileId}/download:
+    get:
+      tags:
+        - Files
+      summary: Download file
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: File download
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/files/{fileId}/url:
+    get:
+      tags:
+        - Files
+      summary: Get file URL
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: File URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Clerk JWT token authentication
+
+  parameters:
+    TenantId:
+      name: id
+      in: path
+      required: true
+      description: Tenant (Agency) ID
+      schema:
+        type: string
+        format: uuid
+    ClientId:
+      name: id
+      in: path
+      required: true
+      description: Client ID
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+        tier:
+          type: string
+          enum: [starter, growth, scale]
+          nullable: true
+        agency_seat_limit:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateTenantRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+          enum: [starter, growth, scale]
+        agency_seat_limit:
+          type: integer
+          minimum: 0
+
+    UpdateTenantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+        tier:
+          type: string
+          enum: [starter, growth, scale]
+        agency_seat_limit:
+          type: integer
+          minimum: 0
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agency_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+          enum: [starter, growth, scale]
+          nullable: true
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateClientRequest:
+      type: object
+      required:
+        - name
+        - slug
+        - tier
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+          enum: [starter, growth, scale]
+
+    UpdateClientRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+
+    Location:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type: object
+          additionalProperties: true
+        phone:
+          type: string
+        business_hours:
+          type: object
+          additionalProperties: true
+        categories:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateLocationRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        address:
+          type: object
+          additionalProperties: true
+        phone:
+          type: string
+        business_hours:
+          type: object
+          additionalProperties: true
+        categories:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+
+    UpdateLocationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: object
+          additionalProperties: true
+        phone:
+          type: string
+        business_hours:
+          type: object
+          additionalProperties: true
+        categories:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+
+    ClientMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [owner, admin, staff, viewer, client_viewer]
+        location_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AddClientMemberRequest:
+      type: object
+      required:
+        - user_id
+        - role
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [owner, admin, staff, viewer, client_viewer]
+        location_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    SeatUsage:
+      type: object
+      properties:
+        agency_seats_used:
+          type: integer
+        agency_seats_limit:
+          type: integer
+        client_seats_used:
+          type: integer
+        client_seats_limit:
+          type: integer
+        total_clients:
+          type: integer
+        total_locations:
+          type: integer
+        client_breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientSeatInfo'
+
+    ClientSeatInfo:
+      type: object
+      properties:
+        client_id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        locations:
+          type: integer
+        members:
+          type: integer
+        seat_limit:
+          type: integer
+        seats_used:
+          type: integer
+
+    Branding:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        domain:
+          type: string
+        host:
+          type: string
+        theme:
+          type: object
+          additionalProperties: true
+        logo_url:
+          type: string
+        favicon_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BrandingInput:
+      type: object
+      properties:
+        domain:
+          type: string
+        host:
+          type: string
+        theme:
+          type: object
+          additionalProperties: true
+        logo_url:
+          type: string
+        favicon_url:
+          type: string
+
+    SignRequest:
+      type: object
+      required:
+        - agency_id
+        - asset
+      properties:
+        agency_id:
+          type: string
+          format: uuid
+        asset:
+          type: string
+
+    SignResponse:
+      type: object
+      properties:
+        url:
+          type: string
+        method:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        key:
+          type: string
+        expires:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized - Missing or invalid Bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict - Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

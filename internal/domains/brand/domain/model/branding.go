@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"farohq-core-app/internal/domains/brand/domain/utils"
+
 	"github.com/google/uuid"
 )
 
@@ -407,4 +409,145 @@ func generateSlugFromText(text string) string {
 		return ""
 	}
 	return slug
+}
+
+// GetComponentBorderRadius returns the border radius for a specific component and style
+// component: "button", "card", "panel", "tile", "badge", "input"
+// style: "default", "rounded", "square"
+// Returns default value if not found in theme JSON
+func (b *Branding) GetComponentBorderRadius(component, style string) string {
+	if b.themeJSON == nil {
+		return getDefaultBorderRadius(component, style)
+	}
+
+	spacing, ok := b.themeJSON["spacing"].(map[string]interface{})
+	if !ok {
+		return getDefaultBorderRadius(component, style)
+	}
+
+	borderRadius, ok := spacing["border_radius"].(map[string]interface{})
+	if !ok {
+		// Check for legacy single border_radius value
+		if legacyRadius, ok := spacing["border_radius"].(string); ok {
+			return legacyRadius
+		}
+		return getDefaultBorderRadius(component, style)
+	}
+
+	componentConfig, ok := borderRadius[component].(map[string]interface{})
+	if !ok {
+		return getDefaultBorderRadius(component, style)
+	}
+
+	if radius, ok := componentConfig[style].(string); ok {
+		return radius
+	}
+
+	// Fallback to default style
+	if defaultRadius, ok := componentConfig["default"].(string); ok {
+		return defaultRadius
+	}
+
+	return getDefaultBorderRadius(component, style)
+}
+
+// getDefaultBorderRadius returns default border radius values
+func getDefaultBorderRadius(component, style string) string {
+	defaults := map[string]map[string]string{
+		"button": {
+			"default": "999px", // Pill shape
+			"rounded": "8px",
+			"square":  "0px",
+		},
+		"card": {
+			"default": "12px",
+			"rounded": "16px",
+			"square":  "0px",
+		},
+		"panel": {
+			"default": "8px",
+			"rounded": "12px",
+			"square":  "0px",
+		},
+		"tile": {
+			"default": "4px",
+			"rounded": "8px",
+			"square":  "0px",
+		},
+		"badge": {
+			"default": "999px", // Pill shape
+			"rounded": "6px",
+			"square":  "0px",
+		},
+		"input": {
+			"default": "6px",
+			"rounded": "8px",
+			"square":  "0px",
+		},
+	}
+
+	if compDefaults, ok := defaults[component]; ok {
+		if styleValue, ok := compDefaults[style]; ok {
+			return styleValue
+		}
+		return compDefaults["default"]
+	}
+
+	// Ultimate fallback
+	return "8px"
+}
+
+// ValidateContrast validates if a text color has sufficient contrast against background
+// Returns true if contrast meets minimum ratio, false otherwise
+func (b *Branding) ValidateContrast(backgroundColor, textColor string) bool {
+	minRatio := b.GetContrastMinimumRatio()
+	return utils.ValidateContrast(backgroundColor, textColor, minRatio)
+}
+
+// GetContrastingTextColor returns appropriate text color for a background
+func (b *Branding) GetContrastingTextColor(backgroundColor string) string {
+	return utils.GetContrastingTextColor(backgroundColor)
+}
+
+// EnsureContrast ensures text color has sufficient contrast, auto-adjusting if needed
+func (b *Branding) EnsureContrast(backgroundColor, textColor string) string {
+	minRatio := b.GetContrastMinimumRatio()
+	autoAdjust := b.GetContrastAutoAdjust()
+	return utils.EnsureContrast(backgroundColor, textColor, minRatio, autoAdjust)
+}
+
+// GetContrastMinimumRatio returns the minimum contrast ratio from theme JSON
+func (b *Branding) GetContrastMinimumRatio() float64 {
+	if b.themeJSON == nil {
+		return 4.5 // WCAG AA default
+	}
+
+	contrast, ok := b.themeJSON["contrast"].(map[string]interface{})
+	if !ok {
+		return 4.5
+	}
+
+	if ratio, ok := contrast["minimum_ratio"].(float64); ok {
+		return ratio
+	}
+
+	return 4.5
+}
+
+// GetContrastAutoAdjust returns whether auto-adjust is enabled
+func (b *Branding) GetContrastAutoAdjust() bool {
+	if b.themeJSON == nil {
+		return true // Default to auto-adjust
+	}
+
+	contrast, ok := b.themeJSON["contrast"].(map[string]interface{})
+	if !ok {
+		return true
+	}
+
+	if autoAdjust, ok := contrast["auto_adjust"].(bool); ok {
+		return autoAdjust
+	}
+
+	return true
 }

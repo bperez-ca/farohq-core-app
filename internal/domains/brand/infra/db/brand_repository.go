@@ -38,7 +38,7 @@ func (r *BrandRepository) FindByAgencyID(ctx context.Context, agencyID uuid.UUID
 
 	var (
 		dbAgencyID              uuid.UUID
-		brandDomain             string
+		brandDomain             *string // Use pointer to handle NULL values
 		subdomain               string
 		domainTypeStr           *string
 		website                 string
@@ -102,7 +102,7 @@ func (r *BrandRepository) FindByAgencyID(ctx context.Context, agencyID uuid.UUID
 
 	return model.NewBrandingWithID(
 		dbAgencyID,
-		brandDomain,
+		stringPtr(brandDomain), // Convert *string to string (empty string if nil)
 		subdomain,
 		domainType,
 		website,
@@ -133,7 +133,7 @@ func (r *BrandRepository) FindByDomain(ctx context.Context, domainParam string) 
 
 	var (
 		agencyID                uuid.UUID
-		dbDomain                string
+		dbDomain                *string // Use pointer to handle NULL values
 		subdomain               string
 		domainTypeStr           *string
 		website                 string
@@ -197,7 +197,7 @@ func (r *BrandRepository) FindByDomain(ctx context.Context, domainParam string) 
 
 	return model.NewBrandingWithID(
 		agencyID,
-		dbDomain,
+		stringPtr(dbDomain), // Convert *string to string (empty string if nil)
 		subdomain,
 		domainType,
 		website,
@@ -228,7 +228,7 @@ func (r *BrandRepository) FindBySubdomain(ctx context.Context, subdomainParam st
 
 	var (
 		agencyID                uuid.UUID
-		brandDomain             string
+		brandDomain             *string // Use pointer to handle NULL values
 		subdomain               string
 		domainTypeStr           *string
 		website                 string
@@ -292,7 +292,7 @@ func (r *BrandRepository) FindBySubdomain(ctx context.Context, subdomainParam st
 
 	return model.NewBrandingWithID(
 		agencyID,
-		brandDomain,
+		stringPtr(brandDomain), // Convert *string to string (empty string if nil)
 		subdomain,
 		domainType,
 		website,
@@ -359,9 +359,14 @@ func (r *BrandRepository) Save(ctx context.Context, branding *model.Branding) er
 			updated_at = EXCLUDED.updated_at
 	`
 
+	// Convert empty string domain to NULL to avoid unique constraint violations
+	// PostgreSQL UNIQUE constraint treats empty strings as distinct values,
+	// but NULL values are allowed to be duplicated
+	domainValue := nullString(branding.Domain())
+
 	_, err := r.db.Exec(ctx, query,
 		branding.AgencyID(),
-		branding.Domain(),
+		domainValue, // NULL for empty strings, pointer to string for actual values
 		branding.Subdomain(),
 		domainTypeStr,
 		branding.Website(),
@@ -380,6 +385,26 @@ func (r *BrandRepository) Save(ctx context.Context, branding *model.Branding) er
 	)
 
 	return err
+}
+
+// Helper functions for NULL handling
+// nullString converts an empty string to nil, otherwise returns a pointer to the string
+// This is needed because PostgreSQL treats empty strings as distinct values in UNIQUE constraints,
+// but NULL values are allowed to be duplicated
+func nullString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// stringPtr converts a *string to string (empty string if nil)
+// This is used when reading NULL values from the database
+func stringPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // Update updates an existing branding
@@ -419,9 +444,12 @@ func (r *BrandRepository) Update(ctx context.Context, branding *model.Branding) 
 		WHERE agency_id = $1
 	`
 
+	// Convert empty string domain to NULL to avoid unique constraint violations
+	domainValue := nullString(branding.Domain())
+
 	result, err := r.db.Exec(ctx, query,
 		branding.AgencyID(),
-		branding.Domain(),
+		domainValue, // NULL for empty strings, pointer to string for actual values
 		branding.Subdomain(),
 		domainTypeStr,
 		branding.Website(),
@@ -486,7 +514,7 @@ func (r *BrandRepository) ListByAgencyID(ctx context.Context, agencyID uuid.UUID
 	for rows.Next() {
 		var (
 			agencyID                uuid.UUID
-			brandDomain             string
+			brandDomain             *string // Use pointer to handle NULL values
 			subdomain               string
 			domainTypeStr           *string
 			website                 string
@@ -545,7 +573,7 @@ func (r *BrandRepository) ListByAgencyID(ctx context.Context, agencyID uuid.UUID
 
 		brands = append(brands, model.NewBrandingWithID(
 			agencyID,
-			brandDomain,
+			stringPtr(brandDomain), // Convert *string to string (empty string if nil)
 			subdomain,
 			domainType,
 			website,

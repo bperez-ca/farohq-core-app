@@ -93,9 +93,12 @@ func (uc *CreateBrand) Execute(ctx context.Context, req *inbound.CreateBrandRequ
 			})
 		}
 		// Lower tiers cannot configure custom domains
+		// Use empty string which will be converted to NULL in the repository
 		customDomain = ""
 	}
 
+	// Convert empty string to empty string (will be handled as NULL in repository)
+	// The repository layer will convert empty strings to NULL for database storage
 	branding := model.NewBranding(
 		agencyID,
 		customDomain,
