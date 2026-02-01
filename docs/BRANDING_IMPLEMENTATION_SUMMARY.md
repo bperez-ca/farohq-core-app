@@ -153,6 +153,44 @@ All variants updated to use higher contrast text colors:
 - **danger**: `text-red-900` (was `text-red-700`)
 - **Dark mode**: All use `text-{color}-200` for better contrast
 
+## Domain Verification (Vercel)
+
+Custom domain verification for white-label branding (Scale tier) uses the Vercel API for CNAME instructions and verification status.
+
+### Flow
+
+1. **Add domain to Vercel**: When an agency configures a custom domain in branding settings, the backend calls Vercel API to add the domain to the portal project (if not already added).
+2. **Fetch CNAME target**: The CNAME target is always fetched from the Vercel API (never hardcoded) because the value may vary.
+3. **Show instructions in UI**: The DomainVerification component displays the expected CNAME target and human-readable setup instructions.
+4. **Verify**: User adds CNAME record in their DNS provider, then clicks "Verify Domain". Backend calls Vercel API to confirm verification and SSL status.
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/brands/{brandId}/domain-instructions` | GET | Returns domain, CNAME target, and setup instructions (from Vercel API) |
+| `/api/v1/brands/{brandId}/domain-status` | GET | Returns verification status, expected CNAME, SSL status |
+| `/api/v1/brands/{brandId}/verify-domain` | POST | Triggers verification check via Vercel API |
+
+### Environment Variables
+
+Required for domain verification (Scale tier):
+
+- `VERCEL_API_TOKEN` – Vercel API token
+- `VERCEL_PROJECT_ID` – Vercel project ID (portal deployment)
+- `VERCEL_TEAM_ID` – (Optional) Vercel team ID
+
+See [docs/plans/ENV_VARS_AGENTS.md](plans/ENV_VARS_AGENTS.md) for full env var documentation.
+
+### Portal Component
+
+The `DomainVerification` component is shown on the branding settings page (`/agency/settings/branding`) when the agency has a custom domain configured and is on Scale tier. It displays:
+
+- Expected CNAME target (from Vercel API)
+- DNS setup instructions
+- Verify Domain button
+- SSL certificate status (pending, active, failed)
+
 ## Testing Status
 
 - ✅ Go code compiles successfully

@@ -366,6 +366,7 @@ func (ra *RequireAuth) RequireAuth(next http.Handler) http.Handler {
 		}
 		if orgID != nil {
 			ctx = context.WithValue(ctx, "org_id", orgID)
+			ctx = context.WithValue(ctx, "agency_id", orgID) // alias for Strategic Roadmap terminology
 		}
 		if orgSlug != nil {
 			ctx = context.WithValue(ctx, "org_slug", orgSlug)
